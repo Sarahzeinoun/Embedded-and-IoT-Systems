@@ -1,22 +1,3 @@
-/*
-  Rui Santos
-  Complete project details at:
-   - ESP32: https://RandomNerdTutorials.com/esp32-send-email-smtp-server-arduino-ide/
-   - ESP8266: https://RandomNerdTutorials.com/esp8266-nodemcu-send-email-smtp-server-arduino/
- 
-  Parts of this code were added and altered by me, Sarah Zeinoun, to provide the functions needed for this project.
-  The goals is for constant monitoring of values of the moisture and the light
-  In case any fall into the insufficient categories, a corresponding email should be sent.
-  
-  Moisture values:
-  <900: dry, corresponding email: Urgent! Water your plant!
-  >900, <2200: moist, corresponding email: Pay attention! Your plant will soon need water!
-  
-  Light values:
-  <2700: insufficient light, corresponding email: Attention ! Your plant needs more light!
-  
-*/
-
 #include <Arduino.h>
 #if defined(ESP32)
   #include <WiFi.h>
@@ -25,18 +6,18 @@
 #endif
 #include <ESP_Mail_Client.h>
 
-#define WIFI_SSID "wifi id"
-#define WIFI_PASSWORD "wifi password"
+#define WIFI_SSID "wifi_id"
+#define WIFI_PASSWORD "wifi_password"
 
 #define SMTP_HOST "smtp.gmail.com"
 #define SMTP_PORT 465
 
 /* The sign in credentials */
-#define AUTHOR_EMAIL "sender mail"
-#define AUTHOR_PASSWORD "created app password"
+#define AUTHOR_EMAIL "sender_email"
+#define AUTHOR_PASSWORD "email_password"
 
 /* Recipient's email*/
-#define RECIPIENT_EMAIL "personal mail"
+#define RECIPIENT_EMAIL "recipient_email"
 
 /* The SMTP Session object used for Email sending */
 SMTPSession smtp;
@@ -45,56 +26,33 @@ SMTPSession smtp;
 void smtpCallback(SMTP_Status status);
 
 /* define the input port to which the moisture sensor is connected to*/
-const int moistureSensorPin = 25;
-
-/* define the variable used to stored the misture sensor value */ 
-int moistureValue=0;
+//const int moistureSensorPin = 25;
 
 /* define the input port to which the light sensor is connected to*/
-const int lightSensorPin = 34;
+//const int lightSensorPin = 34;
 
-/* define the variable used to stored the misture sensor value */ 
-int lightValue=0;
+const int moisture_threshold = 900;
+const int light_threshold = 2700;
+
+/* Declare the session config data */
+ESP_Mail_Session session;
+
+/* Declare the message class */
+SMTP_Message message;
 
 String htmlMsg;
 
 void setup(){
   Serial.begin(115200);
-  delay(10000);
-}
-  
-void loop(){
-  // The following code will read the input from the moisture sensor
-  Serial.print("Moisture sensor: ");
-  moistureValue = analogRead(moistureSensorPin);
-  Serial.print(moistureValue);
-  Serial.println();
-  
-  #if (moistureValue<900) 
-    htmlMsg = "<div style=\"color:#2f4468;\"><h1>Urgent! Water your plant! </h1><p>- Sent from ESP board</p></div>";
-  #elif (moistureValue<2200)
-    htmlMsg = "<div style=\"color:#2f4468;\"><h1>Pay attention! Your plant will soon need water! </h1><p>- Sent from ESP board</p></div>";
-  #else
-    delay(5000); 
-    // The following code will read the input from the light sensor
-    Serial.print("Light sensor: ");
-    lightValue = analogRead(lightSensorPin);
-    Serial.print(lightValue);
-    Serial.println();
-    #if (lightValue<2700)
-      htmlMsg = "<div style=\"color:#2f4468;\"><h1>Attention ! Your plant needs more light! </h1><p>- Sent from ESP board</p></div>";
-    #endif
-    delay(5000); 
-  #endif
-    
   Serial.println();
   Serial.print("Connecting to AP");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED){
     Serial.print(".");
-    delay(2000);
+    delay(200);
   }
   Serial.println("");
+
   Serial.println("WiFi connected.");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
@@ -109,9 +67,6 @@ void loop(){
   /* Set the callback function to get the sending results */
   smtp.callback(smtpCallback);
 
-  /* Declare the session config data */
-  ESP_Mail_Session session;
-
   /* Set the session config */
   session.server.host_name = SMTP_HOST;
   session.server.port = SMTP_PORT;
@@ -119,43 +74,70 @@ void loop(){
   session.login.password = AUTHOR_PASSWORD;
   session.login.user_domain = "";
 
-  /* Declare the message class */
-  SMTP_Message message;
-
   /* Set the message headers */
   message.sender.name = "ESP32";
   message.sender.email = AUTHOR_EMAIL;
-  message.subject = "ESP Test Email";
   message.addRecipient("Sarah", RECIPIENT_EMAIL);
-
-  /*Send HTML message*/
-  message.html.content = htmlMsg.c_str();
-  message.html.content = htmlMsg.c_str();
-  message.text.charSet = "us-ascii";
-  message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
-
-  /*
-  //Send raw text message
-  String textMsg = "Hello World! - Sent from ESP board";
-  message.text.content = textMsg.c_str();
-  message.text.charSet = "us-ascii";
-  message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
-  
-  message.priority = esp_mail_smtp_priority::esp_mail_smtp_priority_low;
-  message.response.notify = esp_mail_smtp_notify_success | esp_mail_smtp_notify_failure | esp_mail_smtp_notify_delay;*/
-
-  /* Set the custom message header */
-  //message.addHeader("Message-ID: <abcde.fghij@gmail.com>");
-
-  /* Connect to server with the session config */
-  if (!smtp.connect(&session))
-    return;
-
-  /* Start sending Email and close the session */
-  if (!MailClient.sendMail(&smtp, &message))
-    Serial.println("Error sending Email, " + smtp.errorReason());
 }
 
+void loop() {
+   int moisture = analogRead(A1);
+   if (moisture > moisture_threshold){
+    Serial.print("Moisture sensor: ");
+    Serial.print(moisture);
+   }
+   else {
+    message.subject = "Moisture Alert";
+    htmlMsg = "<div style=\"color:#2f4468;\"><h1>Your plant needs watering!</h1><p>- Sent from ESP board</p></div>";
+    
+    /*Send HTML message*/
+    message.html.content = htmlMsg.c_str();
+    message.html.content = htmlMsg.c_str();
+    message.text.charSet = "us-ascii";
+    message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+  
+    /* Connect to server with the session config */
+    if (!smtp.connect(&session))
+    return;
+
+   /* Start sending Email and close the session */
+   if (!MailClient.sendMail(&smtp, &message))
+    Serial.println("Error sending Email, " + smtp.errorReason());
+    Serial.print(moisture);
+    message.subject = "";
+    htmlMsg = "";
+    delay(500);
+   }
+   delay(500);
+
+   int light = analogRead(A2);
+   if (light > light_threshold) {
+    Serial.print("Light sensor: ");
+    Serial.print(light);
+   }
+   else{
+     message.subject = "Light Alert";
+     htmlMsg = "<div style=\"color:#2f4468;\"><h1>Your plant needs more light!</h1><p>- Sent from ESP board</p></div>";
+       /*Send HTML message*/
+    message.html.content = htmlMsg.c_str();
+    message.html.content = htmlMsg.c_str();
+    message.text.charSet = "us-ascii";
+    message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+  
+     /* Connect to server with the session config */
+    if (!smtp.connect(&session))
+    return;
+
+   /* Start sending Email and close the session */
+   if (!MailClient.sendMail(&smtp, &message))
+    Serial.println("Error sending Email, " + smtp.errorReason());
+    Serial.print(light);
+    message.subject = "";
+    htmlMsg = "";
+    delay(500);
+   }
+   delay(1000);
+}
 
 /* Callback function to get the Email sending status */
 void smtpCallback(SMTP_Status status){
@@ -184,5 +166,4 @@ void smtpCallback(SMTP_Status status){
     }
     Serial.println("----------------\n");
   }
- 
 }
